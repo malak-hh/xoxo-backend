@@ -142,6 +142,7 @@ app.get("/api/admin/verify", (req, res) => {
 // =======================
 app.post("/api/products", upload.single("image"), async (req, res) => {
   try {
+    console.log("req.file:", req.file); 
     const newProduct = new Product({
       name:      req.body.name?.trim(),
       price:     Number(req.body.price),

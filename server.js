@@ -4,11 +4,40 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const multer = require("multer");
 const path = require("path");
+const cloudinary = require("cloudinary").v2;
+const { CloudinaryStorage } = require("multer-storage-cloudinary");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+// =======================
+// CLOUDINARY CONFIG
+// =======================
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key:    process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+const storage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: "xoxo-products",
+    allowed_formats: ["jpg", "jpeg", "png", "webp"],
+    transformation: [{ width: 800, crop: "limit" }],
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ["image/jpeg", "image/png", "image/webp"];
+    allowed.includes(file.mimetype) ? cb(null, true) : cb(new Error("Image invalide."));
+  },
+});
 
 // =======================
 // RATE LIMITER
@@ -26,22 +55,6 @@ const rateLimiter = (req, res, next) => {
   requestCounts[ip].push(now);
   return next();
 };
-
-// =======================
-// MULTER CONFIG
-// =======================
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, "uploads/"),
-  filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
-});
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowed = ["image/jpeg", "image/png", "image/webp"];
-    allowed.includes(file.mimetype) ? cb(null, true) : cb(new Error("Image invalide."));
-  },
-});
 
 // =======================
 // PRODUCT SCHEMA
@@ -96,7 +109,7 @@ const orderSchema = new mongoose.Schema({
 const Order = mongoose.model("Order", orderSchema);
 
 // =======================
-// ADMIN AUTH ✅ only once, using .env
+// ADMIN AUTH
 // =======================
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const ADMIN_TOKEN    = process.env.ADMIN_TOKEN;
@@ -131,7 +144,7 @@ app.post("/api/products", upload.single("image"), async (req, res) => {
       category:  req.body.category,
       isSoldOut: req.body.isSoldOut === "true",
       sizes:     req.body.sizes ? JSON.parse(req.body.sizes) : [],
-      image:     req.file ? `uploads/${req.file.filename}` : "",
+      image:     req.file ? req.file.path : "",
     });
     await newProduct.save();
     res.status(201).json(newProduct);
@@ -151,7 +164,7 @@ app.put("/api/products/:id", upload.single("image"), async (req, res) => {
       isSoldOut: req.body.isSoldOut === "true",
     };
     if (req.body.sizes) updateData.sizes = JSON.parse(req.body.sizes);
-    if (req.file) updateData.image = `uploads/${req.file.filename}`;
+    if (req.file) updateData.image = req.file.path;
 
     const updated = await Product.findByIdAndUpdate(req.params.id, updateData, { new: true });
     if (!updated) return res.status(404).json({ error: "Produit introuvable." });
